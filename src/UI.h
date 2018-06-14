@@ -6,6 +6,7 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include "Adafruit_TFTLCD.h"
+#include <TouchScreen.h>
 #include "Fonts/FreeMono12pt7b.h"
 #include "Fonts/FreeSans18pt7b.h"
 
@@ -14,6 +15,7 @@ const uint16_t BLACK      = 0x0000;
 const uint16_t WHITE      = 0xFFFF;
 const uint16_t GREEN      = 0x07E0;
 const uint16_t AQUA       = 0x057C;
+const uint16_t RED        = 0xF800;
 
 struct State {
   uint16_t waterLevel;
@@ -24,7 +26,15 @@ struct State {
 
 class UI {
 public:
-  UI(Adafruit_TFTLCD* tft) : tft(tft) {}
+  UI(Adafruit_TFTLCD* tft,
+    TouchScreen* ts,
+    void (*pump_button_callback)(void),
+    void (*valve_button_callback)(void))
+    : tft(tft),
+    ts(ts) {
+      pumpButtonCallback = pump_button_callback;
+      valveButtonCallback = valve_button_callback;
+    }
 
   void begin() {
     // Initialize LCD
@@ -36,12 +46,18 @@ public:
   void setConsoleMode() {
     tft->fillScreen(BLACK);
     tft->setFont(&FreeMono12pt7b);
-    tft->setTextColor(GREEN);
     tft->setCursor(0, 20);
   }
 
   template <typename T>
-  void log(T data) {
+  void info(T data) {
+    tft->setTextColor(GREEN);
+    tft->println(data);
+  }
+
+  template <typename U>
+  void error(U data) {
+    tft->setTextColor(RED);
     tft->println(data);
   }
 
@@ -51,8 +67,41 @@ public:
     tft->setTextColor(WHITE);
   }
 
-  void update(State* state, bool force=false) {
-    if (millis() - lastUpdateTime > UPDATE_INTERVAL || force) {
+  void update(State* state) {
+    // Touchscreen
+    // TSPoint p = ts->getPoint();
+    // // Fix the directions of the touchscreen pins
+    // pinMode(A2, OUTPUT);
+    // pinMode(A3, OUTPUT);
+    // if (p.z > TS_MIN_PRESSURE && p.z < TS_MAX_PRESSURE) {
+    //   // scale from 0->1023 to tft.width
+    //   uint16_t y = map(constrain(p.x, TS_MINX, TS_MAXX), TS_MINX, TS_MAXX, tft->height(), 0);
+    //   uint16_t x = map(constrain(p.y, TS_MINY, TS_MAXY), TS_MINY, TS_MAXY, tft->width(), 0);
+    //
+    //   // For debug
+    //   // Serial.print("X = "); Serial.print(x);
+    //   // Serial.print("\tY = "); Serial.print(y);
+    //   // Serial.print("\tPressure = "); Serial.println(p.z);
+    //   //
+    //   // tft->drawLine(0, y, tft->width(), y, WHITE);
+    //   // tft->drawLine(x, 0, x, tft->height(), WHITE);
+    //
+    //   if (x > SLIDER_X - TS_SENS_RADIUS && x < SLIDER_X + SLIDER_W + TS_SENS_RADIUS) {
+    //     if (y > PUMP_SLIDER_Y - TS_SENS_RADIUS && y < PUMP_SLIDER_Y + SLIDER_H + TS_SENS_RADIUS) {
+    //       if (millis() - lastPumpButtonPressTime > BUTTON_PRESS_TIME) {
+    //         (*pumpButtonCallback)();
+    //       }
+    //       lastPumpButtonPressTime = millis();
+    //     } else if (y > VALVE_SLIDER_Y - TS_SENS_RADIUS && y < VALVE_SLIDER_Y + SLIDER_H + TS_SENS_RADIUS) {
+    //       if (millis() - lastValveButtonPressTime > BUTTON_PRESS_TIME) {
+    //         (*valveButtonCallback)();
+    //       }
+    //       lastValveButtonPressTime = millis();
+    //     }
+    //   }
+    // }
+
+    if (millis() - lastUpdateTime > UPDATE_INTERVAL) {
       // Pump slider
       if (!lastState || lastState->pumpState != state->pumpState) {
         bmpDraw(state->pumpState ? "EN_CH.bmp" : "EN_UNCH.bmp", SLIDER_X, PUMP_SLIDER_Y);
@@ -104,7 +153,7 @@ public:
           tft->fillRect(WELL_X, WELL_Y, WELL_W, WELL_H, BACKGROUND);
           bmpDraw("TURBINEF.bmp", TURBINE_X, TURBINE_Y);
         } else {
-          bmpDraw("WATER", WELL_X, WELL_Y);
+          bmpDraw("WELL.bmp", WELL_X, WELL_Y);
         }
       }
 
@@ -121,6 +170,14 @@ public:
 private:
   static constexpr uint32_t UPDATE_INTERVAL = 1000;
   static constexpr uint8_t PIXEL_BUFFER_SIZE = 32;
+
+  static constexpr int16_t TS_MIN_PRESSURE = 10;
+  static constexpr int16_t TS_MAX_PRESSURE = 1000;
+  static constexpr int16_t TS_MINX = 150;
+  static constexpr int16_t TS_MINY = 200;
+  static constexpr int16_t TS_MAXX = 920;
+  static constexpr int16_t TS_MAXY = 970;
+  static constexpr int16_t TS_SENS_RADIUS = 5;
 
   static constexpr uint16_t TANK_X = 315;
   static constexpr uint16_t TANK_Y = 12;
@@ -143,9 +200,16 @@ private:
   static constexpr uint16_t TURBINE_X = 33;
   static constexpr uint16_t TURBINE_Y = 244;
 
+  static constexpr uint32_t BUTTON_PRESS_TIME = 500;
+
   Adafruit_TFTLCD* tft;
+  TouchScreen* ts;
+  void (*pumpButtonCallback)(void);
+  void (*valveButtonCallback)(void);
   State* lastState = nullptr;
   uint32_t lastUpdateTime = 0;
+  uint32_t lastPumpButtonPressTime = 0;
+  uint32_t lastValveButtonPressTime = 0;
 
   void bmpDraw(const char *filename, int x, int y) {
     File     bmpFile;
